@@ -1,0 +1,9 @@
+<!-- Flash messages partial. -->
+{% if messages %}
+  {% for message in messages %}
+    <div class="notification is-{{ message.tags }}">
+      <button class="delete"></button>
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endif %}

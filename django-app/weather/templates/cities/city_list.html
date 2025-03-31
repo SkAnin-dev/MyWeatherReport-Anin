@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<!-- Add City Form Section -->
+<section class="section" style="background: url('/media/metofficegovuk_heroXLarge.jpeg') no-repeat center center; background-size: cover;">
+  <div class="container">
+    <div class="columns">
+      <div class="column is-offset-4 is-4">
+        <form id="addCityForm" method="post">
+          {% csrf_token %}
+          <div class="field has-addons">
+            <div class="control is-expanded">
+              <input class="input" name="name" type="text" placeholder="City Name" required>
+            </div>
+            <div class="control">
+              <button class="button is-info" type="submit">Add City</button>
+            </div>
+          </div>
+        </form>
+        <!-- Notification area for add-city messages -->
+        <div id="addCityNotificationArea" style="margin-top: 20px;"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- City List Section -->
+<section class="section">
+  <div class="container">
+    <div class="columns">
+      <div id="cityList" class="column is-offset-4 is-4">
+        {% for city in cities %}
+          <div class="box city-box" data-city-id="{{ city.id }}">
+            <article class="media">
+              <div class="media-left">
+                <figure class="image is-64x64">
+                  <img src="/media/none.png" alt="Weather Icon">
+                </figure>
+              </div>
+              <div class="media-content">
+                <div class="content">
+                  <p>
+                    <span class="title" style="font-weight: normal;">{{ city.name }}</span><br>
+                    <span class="subtitle" id="temp-{{ city.id }}">[??]&deg; C</span><br>
+                    <span class="condition" id="cond-{{ city.id }}">No information</span>
+                  </p>
+                </div>
+              </div>
+              <div class="media-right">
+                <button class="delete" data-delete-city="{{ city.id }}"></button>
+              </div>
+            </article>
+          </div>
+        {% empty %}
+          <p class="has-text-centered">No cities added yet.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Helper: Get CSRF token.
+function getCSRFToken() {
+    return document.querySelector('[name=csrfmiddlewaretoken]').value;
+}
+
+// Helper: Create Bulma notification element.
+function createNotification(message, bulmaClass) {
+  const notification = document.createElement("div");
+  notification.className = `notification ${bulmaClass}`;
+  notification.innerHTML = `<button class="delete"></button> ${message}`;
+  notification.querySelector(".delete").addEventListener("click", () => {
+    notification.remove();
+  });
+  return notification;
+}
+
+// Helper: Replace existing notifications with the new one and scroll to the top of the page.
+function showNotification(message, bulmaClass, notificationArea) {
+    // Clear any existing notifications
+    notificationArea.innerHTML = "";
+    const notification = createNotification(message, bulmaClass);
+    notificationArea.appendChild(notification);
+    // Scroll to the top of the page
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Attach delete handlers for city cards.
+function attachCityDeleteHandlers() {
+    document.querySelectorAll('.city-box .delete').forEach(btn => {
+        btn.onclick = function(e) {
+            e.preventDefault();
+            const cityId = this.getAttribute('data-delete-city');
+            fetch(`/ajax/cities/${cityId}/delete/`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': getCSRFToken() }
+            })
+            .then(async response => {
+                let data = {};
+                try {
+                    data = await response.json();
+                } catch (parseErr) {
+                    if (response.ok) data.success = true;
+                }
+                return { ok: response.ok, data };
+            })
+            .then(({ ok, data }) => {
+                const notificationArea = document.getElementById('addCityNotificationArea');
+                if (ok && (data.status === 'success' || data.success)) {
+                    const cityBox = document.querySelector(`.city-box[data-city-id="${cityId}"]`);
+                    let cityName = "city";
+                    if (cityBox) {
+                        const cityNameEl = cityBox.querySelector('.title');
+                        cityName = cityNameEl ? cityNameEl.textContent.trim() : "city";
+                        cityBox.remove();
+                    }
+                    showNotification(`Successfully deleted '${cityName}'`, "is-success", notificationArea);
+                } else {
+                    showNotification(data.error || "Error deleting city!", "is-danger", notificationArea);
+                }
+            })
+            .catch(err => {
+                console.error('Network error:', err);
+                const notificationArea = document.getElementById('addCityNotificationArea');
+                showNotification("Network error or server not reachable!", "is-danger", notificationArea);
+            });
+        };
+    });
+}
+
+// Time functions using the browser's local time.
+function getLocalTime() {
+    return new Date();
+}
+
+// parseSunTime: create a Date from the ISO string.
+function parseSunTime(timeStr) {
+    if (!timeStr) return null;
+    return new Date(timeStr);
+}
+
+// Determine if it's daytime using local time.
+function isDayTime(sunrise, sunset) {
+    const currentTime = getLocalTime();
+    if (!sunrise || !sunset) return true;
+    return currentTime >= sunrise && currentTime < sunset;
+}
+
+// Fetch weather data for a city box with a 10-second timeout.
+function fetchWeatherData(cityBox) {
+    return new Promise((resolve, reject) => {
+        const cityId = cityBox.getAttribute('data-city-id');
+        const cityName = cityBox.querySelector('.title').innerText;
+        const apikey = '83MPJTJKXE4NAFC8UB3TK53YA';
+        const apiUrl = `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${encodeURIComponent(cityName)}?unitGroup=metric&key=${apikey}&contentType=json`;
+
+        const fetchPromise = fetch(apiUrl)
+            .then(response => {
+                if (!response.ok) throw new Error("City not found");
+                return response.json();
+            })
+            .then(data => {
+                const tempEl = document.getElementById(`temp-${cityId}`);
+                const condEl = document.getElementById(`cond-${cityId}`);
+                const weatherIcon = cityBox.querySelector('.media-left img');
+
+                const currentData = data.currentConditions
+                    ? data.currentConditions
+                    : (data.days && data.days.length > 0 ? data.days[0] : null);
+
+                if (currentData && typeof currentData.temp !== 'undefined' && currentData.conditions) {
+                    tempEl.innerHTML = currentData.temp + "&deg; C";
+                    condEl.textContent = currentData.conditions;
+
+                    let sunriseEpoch, sunsetEpoch;
+                    if (currentData.sunriseEpoch && currentData.sunsetEpoch) {
+                        sunriseEpoch = currentData.sunriseEpoch;
+                        sunsetEpoch = currentData.sunsetEpoch;
+                    } else if (data.days && data.days.length > 0) {
+                        sunriseEpoch = data.days[0].sunriseEpoch;
+                        sunsetEpoch = data.days[0].sunsetEpoch;
+                    }
+                    
+                    let dayTime = true;
+                    if (sunriseEpoch && sunsetEpoch) {
+                        const nowEpoch = Date.now() / 1000;
+                        dayTime = (nowEpoch >= sunriseEpoch && nowEpoch < sunsetEpoch);
+                    } else {
+                        let sunrise = currentData.sunrise ? parseSunTime(currentData.sunrise) : null;
+                        let sunset = currentData.sunset ? parseSunTime(currentData.sunset) : null;
+                        dayTime = (sunrise && sunset) ? (getLocalTime() >= sunrise && getLocalTime() < sunset) : true;
+                    }
+
+                    // Weather icon logic with ordered checks and robust conditions.
+                    let iconFile = "none.png";
+                    const condition = currentData.conditions.toLowerCase();
+
+                    if (condition.includes("thunder")) {
+                      if (condition.includes("showers")) {
+                        iconFile = dayTime ? "thunder-showers-day.png" : "thunder-showers-night.png";
+                      } else if (condition.includes("rain")) {
+                        iconFile = "thunder-rain.png";
+                      } else {
+                        iconFile = "thunder.png";
+                      }
+                    }
+                    else if (condition.includes("rain") && condition.includes("snow")) {
+                      iconFile = "rain-snow.png";
+                    }
+                    else if (condition.includes("rain") && condition.includes("showers")) {
+                      iconFile = dayTime ? "showers-day.png" : "showers-night.png";
+                    }
+                    else if (condition.includes("rain")) {
+                      iconFile = "rain.png";
+                    }
+                    else if (condition.includes("snow") && condition.includes("showers")) {
+                      iconFile = dayTime ? "snow-showers-day.png" : "snow-showers-night.png";
+                    }
+                    else if (condition.includes("snow")) {
+                      iconFile = "snow.png";
+                    }
+                    else if (condition.includes("sleet")) {
+                      iconFile = "sleet.png";
+                    }
+                    else if (condition.includes("fog")) {
+                      iconFile = "fog.png";
+                    }
+                    else if (condition.includes("hail")) {
+                      iconFile = "hail.png";
+                    }
+                    else if (condition.includes("wind")) {
+                      iconFile = "wind.png";
+                    }
+                    else if (condition.includes("clear")) {
+                      iconFile = dayTime ? "clear-day.png" : "clear-night.png";
+                    }
+                    else if (condition.includes("partly") && condition.includes("cloudy")) {
+                      iconFile = dayTime ? "partly-cloudy-day.png" : "partly-cloudy-night.png";
+                    }
+                    else if (condition.includes("overcast")) {
+                      iconFile = "cloudy.png";
+                    }
+                    else if (condition.includes("cloudy")) {
+                      if (currentData.cloudcover !== undefined && currentData.cloudcover < 80) {
+                        iconFile = dayTime ? "partly-cloudy-day.png" : "partly-cloudy-night.png";
+                      } else {
+                        iconFile = "cloudy.png";
+                      }
+                    }
+
+                    weatherIcon.src = `/media/${iconFile}`;
+                } else {
+                    console.error("Incomplete data for city:", cityName);
+                    document.getElementById(`temp-${cityId}`).innerHTML = "[??]&deg; C";
+                    document.getElementById(`cond-${cityId}`).textContent = "No information";
+                    weatherIcon.src = "/media/none.png";
+                }
+                resolve();
+            })
+            .catch(err => {
+                console.error("Error fetching weather for", cityName, err);
+                const tempEl = document.getElementById(`temp-${cityId}`);
+                const condEl = document.getElementById(`cond-${cityId}`);
+                const weatherIcon = cityBox.querySelector('.media-left img');
+                tempEl.innerHTML = "[??]&deg; C";
+                condEl.textContent = "No information";
+                weatherIcon.src = "/media/none.png";
+                resolve();
+            });
+
+        // Create timeout promise that resolves in 10 seconds.
+        const timeoutPromise = new Promise(resolveTimeout => {
+            setTimeout(resolveTimeout, 10000);
+        });
+
+        // Race the fetch and timeout.
+        Promise.race([fetchPromise, timeoutPromise]).then(() => {
+            resolve();
+        });
+    });
+}
+
+// Validate city using weather API.
+function validateCity(cityName) {
+    const apikey = '83MPJTJKXE4NAFC8UB3TK53YA';
+    const apiUrl = `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${encodeURIComponent(cityName)}?unitGroup=metric&key=${apikey}&contentType=json`;
+    return fetch(apiUrl)
+        .then(response => {
+            if (!response.ok) throw new Error("Invalid city");
+            return response.json();
+        })
+        .then(data => {
+            if (data.days && data.days.length > 0) return true;
+            else throw new Error("Invalid city");
+        });
+}
+
+// Attach delete handlers for notifications.
+function attachNotificationDeleteHandlers(context) {
+    (context || document).querySelectorAll('.notification .delete').forEach(btn => {
+        btn.onclick = function() {
+            this.parentElement.remove();
+        };
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    attachCityDeleteHandlers();
+
+    // Gather weather data promises for all city boxes.
+    const cityBoxes = Array.from(document.querySelectorAll('.city-box'));
+    const weatherPromises = cityBoxes.map(cityBox => fetchWeatherData(cityBox));
+
+    // When all weather data has loaded (or timed out), hide the loader and show the main content.
+    Promise.all(weatherPromises).then(() => {
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('main-content').style.display = 'block';
+    });
+
+    const addCityForm = document.getElementById('addCityForm');
+    addCityForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(addCityForm);
+        const cityName = formData.get('name').trim();
+        const notificationArea = document.getElementById('addCityNotificationArea');
+
+        // Check for duplicate city.
+        const duplicate = Array.from(document.querySelectorAll('#cityList .city-box .title'))
+          .some(el => el.textContent.trim().toLowerCase() === cityName.toLowerCase());
+        if (duplicate) {
+            showNotification(`City '${cityName}' already exists in the list!`, "is-danger", notificationArea);
+            attachNotificationDeleteHandlers(notificationArea);
+            return;
+        }
+
+        // Validate city before adding.
+        validateCity(cityName)
+            .then(() => {
+                return fetch('/ajax/cities/add/', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCSRFToken() },
+                    body: formData
+                });
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    addCityForm.reset();
+                    showNotification("City added successfully!", "is-success", notificationArea);
+                    attachNotificationDeleteHandlers(notificationArea);
+
+                    const cityList = document.getElementById('cityList');
+                    const newCityHTML = `
+                      <div class="box city-box loading" data-city-id="${data.city.id}">
+                        <article class="media">
+                          <div class="media-left">
+                            <figure class="image is-64x64">
+                              <img src="/media/none.png" alt="Weather Icon">
+                            </figure>
+                          </div>
+                          <div class="media-content">
+                            <div class="content">
+                              <p>
+                                <span class="title" style="font-weight: normal;">${data.city.name}</span><br>
+                                <span class="subtitle" id="temp-${data.city.id}">[??]&deg; C</span><br>
+                                <span class="condition" id="cond-${data.city.id}">No information</span>
+                              </p>
+                            </div>
+                          </div>
+                          <div class="media-right">
+                            <button class="delete" data-delete-city="${data.city.id}"></button>
+                          </div>
+                        </article>
+                      </div>`;
+                    cityList.insertAdjacentHTML('beforeend', newCityHTML);
+                    attachCityDeleteHandlers();
+                    const newCityBox = document.querySelector(`.city-box[data-city-id="${data.city.id}"]`);
+                    if (newCityBox) { fetchWeatherData(newCityBox); }
+                } else {
+                    showNotification(`City '${cityName}' already exists in the list!`, "is-danger", notificationArea);
+                    attachNotificationDeleteHandlers(notificationArea);
+                }
+            })
+            .catch(err => {
+                console.error('Validation or network error:', err);
+                showNotification(`City '${cityName}' does not exist in the world!`, "is-danger", notificationArea);
+                attachNotificationDeleteHandlers(notificationArea);
+            });
+    });
+
+    attachNotificationDeleteHandlers();
+});
+</script>
+{% endblock %}

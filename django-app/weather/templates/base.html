@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head> 
+    <meta charset="UTF-8"> 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>{% block title %}My Weather Report{% endblock %}</title> 
+    <!-- Bulma CSS for styling -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css"> 
+    {% block extra_head %}{% endblock %}
+</head> 
+
+<body style="cursor: default;"> 
+    <!-- Header Section -->
+    <section class="section" style="padding: 0; background-color: rgb(0,70,130);"> 
+        <div class="container" style="margin-left: 3px;"> 
+            <img src="/media/surrey-logo.svg" width="144" height="44" alt="Surrey Logo"> 
+        </div> 
+    </section> 
+
+    <!-- Hero Section -->
+    <section class="hero is-primary"> 
+        <div class="hero-body"> 
+            <div class="container"> 
+                <!-- Adjust the font weight here if needed (change 'normal' to a different value like '500') -->
+                <h1 class="title" style="font-weight: 500;"> 
+                    My Weather Report 
+                    <span id="welcome">(Unknown User)</span> 
+                </h1> 
+            </div>
+        </div>
+    </section> 
+
+    <script>
+        // Simple greeting logic – set to  welcome User by default
+        var greetingBox = document.getElementById("welcome");
+        if (greetingBox) {
+            greetingBox.innerHTML = " (Welcome User!) ";
+        }
+    </script>
+
+    <!-- Scrolling Marquee Section -->
+    <section class="hero is-info"> 
+        <marquee behavior="scroll" direction="left" id="cityinfo">
+            Guildford Now: 11.1℃ Clear; Tomorrow: 5.3℃ Rain, Partially cloudy <!--Default data-->
+        </marquee> 
+    </section> 
+
+    {% block content %}{% endblock %}
+
+    <hr style="border-top:2px solid #000; margin-bottom:0;"> 
+
+    <!-- Footer Section -->
+    <footer class="footer has-background-info-light" style="padding: 20px 0 25px;"> 
+        <div class="container"> 
+            <div class="level"> 
+                <div class="level-left"> 
+                    <span class="level-item"> 
+                        Styled by &nbsp;<img src="https://bulma.io/assets/brand/Bulma%20Logo.png" alt="Bulma Logo" width="60"> 
+                    </span> 
+                </div> 
+                <div class="level-right"> 
+                    <div class="level-item">
+                        <div class="content has-text-centered has-text-white-invert">©2025 S.S.A. Anin</div>
+                    </div> 
+                </div> 
+            </div> 
+        </div> 
+    </footer> 
+
+    <!-- Main JavaScript file from /media/ -->
+    <script src="/media/weather.js"></script> 
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
